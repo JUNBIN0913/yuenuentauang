@@ -11,11 +11,22 @@ jobs:
       - name: Unpack tarball into the repo
         run: |
           set -euo pipefail
-          TAR=$(ls -1 *.tar.gz | head -n 1)
-          echo "Using $TAR"
-          mkdir /tmp/new
-          tar xzf "$TAR" -C /tmp/new --strip-components=1
-          test -f /tmp/new/public/index.html
+          echo "== 目前 repo 最上層的檔案 =="
+          ls -la | head -n 15
+          shopt -s nullglob
+          files=(*.tar.gz *.tgz *.tar)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "ERROR: 找不到壓縮檔。請先把 yuwen-firebase-step4.tar.gz 上傳到 repo 最上層，再重新執行。"
+            exit 1
+          fi
+          TAR="${files[0]}"
+          echo "使用壓縮檔：$TAR（$(stat -c %s "$TAR") bytes）"
+          rm -rf /tmp/new && mkdir /tmp/new
+          tar xf "$TAR" -C /tmp/new --strip-components=1
+          if [ ! -f /tmp/new/public/index.html ]; then
+            echo "ERROR: 壓縮檔內容不符（找不到 public/index.html）。請重新下載 yuwen-firebase-step4.tar.gz 後再上傳。"
+            exit 1
+          fi
           find . -mindepth 1 -maxdepth 1 ! -name .git ! -name .github ! -name "$TAR" -exec rm -rf {} +
           mkdir docs
           cp -a /tmp/new/public/. docs/
