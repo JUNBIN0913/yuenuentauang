@@ -110,3 +110,4 @@ h1, h2, h3 { line-height: 1.5; font-weight: 600; }
 .site-footer { padding-top: 1.2rem; padding-bottom: 2rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; text-align: center; }
 @media (max-width: 30rem) { .bar { gap: .5rem; } .brand { font-size: 1.15rem; } .article-body { padding: 1rem; } }
 @media print { .site-header, .site-footer, .back { display: none; } .article-body { border: 0; padding: 0; } }
+.article-body, .article-head h1, .card, .meta, .msg { overflow-wrap: anywhere; }
