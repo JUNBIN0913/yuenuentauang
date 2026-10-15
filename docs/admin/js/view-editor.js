@@ -53,6 +53,8 @@
       sumIn.value = art.summary || '';
       const bodyEl = el('div', { class: 'body', contenteditable: 'true', role: 'textbox', 'aria-multiline': 'true', 'aria-label': '文章內文', 'data-placeholder': '在這裡開始撰寫…', spellcheck: 'false' });
       bodyEl.innerHTML = Admin.sanitize(art.bodyHtml); // 載入前一律先消毒
+      let normalizedOnLoad = false;
+      { const before = bodyEl.innerHTML; normalizeBreaks(bodyEl); normalizedOnLoad = bodyEl.innerHTML !== before; }
       const paper = el('div', { class: 'paper' }, titleIn, sumIn, bodyEl);
       root.className = 'workspace editor-ws';
       root.replaceChildren(el('div', { class: 'paper-scroll' }, paper));
@@ -224,12 +226,45 @@
       // 點工具列不奪走編輯區的選取範圍（下拉選單與輸入框除外）
       document.getElementById('ribbon-slot').addEventListener('mousedown', e => { if (!e.target.closest('input,select,textarea,option')) e.preventDefault(); });
       tagUIReady = true; renderTagUI(); applyLayout(); updateQat();
+      if (normalizedOnLoad) { markDirty(); setStatus('已把「連按兩次換行」整理成段落（尚未儲存，請按儲存）'); }
 
       /* ---------- 儲存／發布／草稿 ---------- */
+      // 同一個段落裡「連續兩個以上的換行（<br><br>）」＝使用者想要的「空一行」。
+      // 整理成真正的段落（<p>…</p><p>…</p>），段距由樣式統一控制；單一換行（Shift+Enter）保留在段內。
+      function normalizeBreaks(root) {
+        const isBlank = n => n.nodeName === 'BR' || (n.nodeType === 3 && !n.textContent.trim());
+        for (const p of [...root.children].filter(n => n.nodeName === 'P')) {
+          const kids = [...p.childNodes];
+          const groups = []; let cur = []; let i = 0;
+          while (i < kids.length) {
+            if (kids[i].nodeName === 'BR') {
+              let j = i, brs = 0;
+              while (j < kids.length && isBlank(kids[j])) { if (kids[j].nodeName === 'BR') brs++; j++; }
+              if (brs >= 2) { groups.push(cur); cur = []; i = j; continue; }
+            }
+            cur.push(kids[i]); i++;
+          }
+          groups.push(cur);
+          if (groups.length < 2) continue;
+          const parts = groups.filter(g => g.some(n => !isBlank(n)));
+          if (!parts.length) continue;
+          for (const g of parts) {
+            while (g.length && g[0].nodeName === 'BR') g.shift();
+            while (g.length && g[g.length - 1].nodeName === 'BR') g.pop();
+            const np = document.createElement('p');
+            if (p.className) np.className = p.className; // 保留置中／靠右等對齊類別
+            np.append(...g);
+            p.before(np);
+          }
+          p.remove();
+        }
+      }
+
       function getHtml() { // 整理成前台白名單允許的結構（div → p、strike → s、移除空段落）
         const c = bodyEl.cloneNode(true);
         c.querySelectorAll('div').forEach(d => { const p = document.createElement('p'); p.append(...d.childNodes); d.replaceWith(p); });
         c.querySelectorAll('strike').forEach(s => { const n = document.createElement('s'); n.append(...s.childNodes); s.replaceWith(n); });
+        normalizeBreaks(c);
         c.querySelectorAll('p').forEach(p => { if (!p.textContent.trim() && !p.querySelector('img,table,hr')) p.remove(); });
         return c.innerHTML.trim();
       }
@@ -290,7 +325,7 @@
             body: el('p', {}, `偵測到 ${Admin.fmtTime(d.savedAt)} 的自動暫存內容，要還原嗎？（選擇「${isNew ? '捨棄暫存' : '使用已儲存版本'}」會捨棄這份暫存。）`),
             okText: '還原草稿', cancelText: isNew ? '捨棄暫存' : '使用已儲存版本' });
           if (gone) return;
-          if (restore) { titleIn.value = d.title; bodyEl.innerHTML = Admin.sanitize(d.bodyHtml); markDirty(); setStatus('已還原自動暫存草稿（尚未儲存）'); }
+          if (restore) { titleIn.value = d.title; bodyEl.innerHTML = Admin.sanitize(d.bodyHtml); normalizeBreaks(bodyEl); markDirty(); setStatus('已還原自動暫存草稿（尚未儲存）'); }
           else await data.deleteDraft(isNew ? null : state.id).catch(() => {});
         } catch { /* 無草稿或讀取失敗皆略過 */ }
       })();
