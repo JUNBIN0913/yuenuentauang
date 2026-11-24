@@ -1,60 +1,117 @@
-# 語文辨正（Firebase 版）
+# 陽春白雪KTV 線上點歌平台
 
-純靜態網站（`public/`），資料與登入由 Firebase 提供，可直接部署到 GitHub Pages。
-設計與規則說明見 `DATA-MODEL.md`。
+三個獨立頁面 + 兩個共用檔案，全部連到同一個 Firebase 專案，資料即時同步。
 
-## 目前進度
-- ✅ 資料結構、Firestore 安全規則（`firestore.rules`，**尚未在模擬器實測**）
-- ✅ 前台（`public/index.html`、`js/app.js`）
-- ✅ 後台：登入、儀表板、文章列表（發布／下架／刪除）、標籤管理（新增／改名／合併／刪除）、提問審核（回覆／封存／轉為文章）
-- ✅ 後台 **Ribbon 編輯器**：灰底白紙頁面視圖、三個頁籤（文字格式／插入與標籤／版面設定）、每 30 秒自動暫存與還原、Ctrl+S、發布／下架、「檢視前台」連結、儲存時消毒
-
-**編輯器的已知限制**
-- 排版指令（粗體、段落樣式、清單…）使用瀏覽器的 `document.execCommand`。測試環境（jsdom）不支援它，只能驗證「按鈕送出了正確指令」，**實際排版效果請在真瀏覽器確認**。
-- 自動暫存只保存標題與內文（不含摘要與標籤）；還原時只還原這兩項。
-- 暫存的離開補存是「盡力而為」：分頁直接關閉時，Firestore 的寫入不一定來得及送出（會有離開確認提示）。
-- 目前沒有文字對齊按鈕（前台 CSS 已支援 `ta-center`／`ta-right` 類別）。
-
-## 第一次使用後台
-1. Firebase Console → Authentication → 新增使用者（電子郵件／密碼）。
-2. 複製該使用者的 UID，到 Firestore 手動建立文件 `admins/<UID>`（內容隨意）。
-3. 開啟 `你的網址/admin/login.html` 登入。只有在白名單內的帳號能進後台；真正的權限由 `firestore.rules` 把關，登入頁的檢查只是使用者體驗。
-4. 第一次發布文章時，系統會自動建立前台索引文件 `meta/index`。
-
-## ⚠️ 資料夾裡有兩份前台實作，請二選一
-- `public/`：本次建置的版本。Firebase SDK 以 esbuild 打包成自行託管的 `public.bundle.js`（約 520 KB，gzip 後約 130 KB），需要 `npm run build`。有 jsdom 介面測試（`tests/ui-public.test.js`）。GitHub Pages 工作流程發布的是這個資料夾。
-- `site/`：**不是**本次建置產生的，是之後出現在此資料夾的另一份實作（檔案時間為 2026-10-08 18:39–18:42，含 `tests/data.test.js`）。Firebase SDK 直接從 Google CDN 載入，不需要打包工具；設定檔為 `site/js/firebase-config.js`。
-兩者使用同一套資料結構與 `firestore.rules`。請擇一作為正式版並刪除另一份，以免日後維護兩份。
-
-## 檔案
 ```
-public/            ← 要部署的網站（含已打包的 js/public.bundle.js）
-  admin/           ← 後台（js/admin.bundle.js 為已打包的資料層）
-  js/config.js     ← 填入你的 Firebase 設定（前後台共用）
-  js/app.js        ← 前台畫面邏輯（只依賴 window.YuwenData 介面）
-  vendor/purify.min.js   ← DOMPurify（自行託管，用於文章內文消毒）
-src/               ← Firebase 資料層原始碼（fb-core.js、public-adapter.js、admin-adapter.js）
-tests/             ← admin-adapter（資料層）、ui-public、ui-admin、bundle，以及 rules（需模擬器）；tests/fakes 是假的 Firebase 模組
+firebase-config.js   ← 共用設定（Firebase 金鑰、QR碼連結網址）
+ktv-utils.js          ← 共用工具（初始化 Firebase、網址辨識、分類常數）
+qrcode-lib.js          ← QR 碼產生函式庫（純前端運算，不依賴任何外部圖片服務）
+stroke-data.js         ← 漢字筆劃數對照表（用於歌曲排序）
+index.html            ← 電視牆主控台（左：播放器／右：QR碼＋分類選歌）
+order.html             ← 手機掃碼點歌頁（點歌／已點／遙控 三分頁）
+admin.html             ← 後台管理（加歌、歌曲庫、播放控制）
 ```
 
-## 開始使用
-1. 依 `DATA-MODEL.md` 的「Console 設定清單」建立 Firebase 專案、啟用 Auth 與 Firestore。
-2. 編輯 `public/js/config.js`，填入網頁應用程式的 SDK 設定（這些是公開資訊）。
-3. 部署規則：`npx firebase deploy --only firestore`（先 `npx firebase login`、`npx firebase use <專案ID>`）。
-4. 本機預覽：`npm install && npm run serve` → http://localhost:8000
-   （使用 App Check 時，localhost 會印出除錯權杖，需在 Console 登錄。）
-5. 修改 `src/` 後重新打包：`npm run build`，並把更新後的 `public/js/public.bundle.js` 一併提交。
+## 一、部署前設定（必做）
 
-## 部署到 GitHub Pages
-1. 把整個專案推到 GitHub（`main` 分支）。
-2. Repo → Settings → Pages → Source 選 **GitHub Actions**。
-3. 推送後 `.github/workflows/pages.yml` 會把 `public/` 發布到 `https://junbin0913.github.io/<repo>/`。
-4. 把該網域加入 Firebase Authentication 的「授權網域」，並在 App Check／API 金鑰限制中允許它。
+1. 到 [Firebase Console](https://console.firebase.google.com/) 新增一個專案
+2. 「建置」→ Firestore Database → 建立資料庫
+3. 「建置」→ Authentication → 登入方式 → 啟用「電子郵件/密碼」→ 到「使用者」分頁手動新增你自己的管理員帳號（例如你的 email + 一組密碼），這組帳密就是 `admin.html` 的登入帳密
+4. 「專案設定」→ 一般 → 新增網頁應用程式，把產生的設定物件貼到 `firebase-config.js` 的 `FIREBASE_CONFIG`
+5. 把 `order.html` 部署後的完整網址填入 `firebase-config.js` 的 `ORDER_PAGE_URL`（電視牆的 QR 碼會指向這個網址）
+6. Firestore →「規則」，貼上 `firebase-config.js` 檔案開頭註解裡建議的安全性規則，發布
 
-## 測試
-```
-npm test              # 資料層 + 前台介面 + 後台介面 + 打包檔冒煙（不需要網路或模擬器）
-npm run test:rules    # Firestore 規則（需要 Java 與模擬器；請在本機執行）
-```
-- `admin-adapter` 與 `ui-admin` 用的是**真正的 `src/admin-adapter.js`**，搭配記憶體版假 Firestore（`tests/fakes/firestore.js`）。假實作內建一部分規則形狀檢查（文章欄位、伺服器時間、`drafts` 前綴、批次寫入 ≤ 20 次 `isAdmin()` 呼叫），所以寫入內容與規則不一致時會被抓到。
-- 但它**不是**真正的 Firestore：索引、查詢細節、離線快取、Auth、App Check 與規則的完整語意都沒有驗證。請用你的專案實際走一遍（登入、發布、改標籤、合併、提問、冷卻）。
+## 二、部署方式
+
+三個 HTML 檔加上兩個共用 JS 檔，直接放同一層資料夾丟到任何靜態網站空間即可，例如：
+- GitHub Pages（你「僻字考究網」用過的方式）
+- Firebase Hosting（`firebase deploy`，跟 Firestore 同一個專案最省事）
+- 任何支援靜態檔案的空間
+
+電視牆用瀏覽器開 `index.html`（建議全螢幕 F11），後台自己用 `admin.html` 登入管理，客人掃 `index.html` 右上角的 QR 碼會連到 `order.html`。
+
+## 三、資料結構（Firestore）
+
+**songs 集合**（歌曲庫，後台維護）
+| 欄位 | 說明 |
+|---|---|
+| title | 歌名 |
+| artist | 歌手 |
+| urlOriginal | 原唱版網址 |
+| urlCover | 伴唱版網址（可為空字串） |
+| language | 華語／方言／韓語／西洋／日語 |
+| singerType | 男歌手／女歌手／合唱／團體 |
+| platform | youtube／bilibili／odysee（新增時自動判斷） |
+| isNewSong | 布林值，是否為「本月新歌」（選填標籤，不影響原本的語言分類） |
+
+**queue 集合**（目前播放佇列，`order` 由小到大排序，最小者＝正在播放）
+| 欄位 | 說明 |
+|---|---|
+| title / artist / urlOriginal / urlCover | 從 songs 複製過來，方便顯示 |
+| playingSource | "original" 或 "cover"，決定播放哪個版本 |
+| order | 排序用的數字（新增用時間戳記，插歌用中間值） |
+| requestedBy | 點歌來源（電視牆現場／手機掃碼／後台插歌） |
+
+切歌＝刪除 `order` 最小的那筆 queue 文件；插歌＝在「播放中」與「原本下一首」之間插入一筆新的 `order` 值。
+
+**remoteControl 集合**（手機遙控用，只有一筆文件 `cmd`）
+| 欄位 | 說明 |
+|---|---|
+| action | "skip"／"volumeUp"／"volumeDown" |
+| ts | serverTimestamp，電視牆用來判斷是不是「新」指令，避免重新整理時重放舊指令 |
+
+## 四、功能對照表
+
+| 你的需求 | 實作位置 | 說明 |
+|---|---|---|
+| 後台即時加歌，貼網址即可 | admin.html | 自動辨識 YouTube／Bilibili／Odysee 並轉換為站內嵌入播放，不會跳轉外部 |
+| 男/女/合唱/團體、華語/方言/韓語/西洋下拉選單 | admin.html | 新增歌曲表單內建下拉選單 |
+| 顯示歌曲總數 | admin.html 頁首、index.html 右上角 | 即時反映 Firestore 歌曲數量 |
+| 左邊隨機播放、右上QR、右邊分類選歌 | index.html | 佇列空時電視牆自動隨機播放歌曲庫；有人點播時自動切換 |
+| 掃碼點歌平台，即時更新 | order.html | 與電視牆、後台共用同一份 Firestore 資料 |
+| 切歌 | admin.html 播放控制面板 | 一鍵跳過目前播放 |
+| 插歌 | admin.html 播放控制面板 | 搜尋歌曲，插入為「下一首」 |
+| 原唱／伴唱切換 | admin.html 播放控制面板 | 切換目前播放中歌曲的音源（需該首歌有填伴唱版網址） |
+| 閒置自動放大播放器 | index.html | 60 秒沒有本機操作，右側面板自動收合、播放器變寬；有本機操作或按「點歌」鍵立刻恢復。手機/後台遠端點歌不會觸發或打斷這個效果 |
+| 本月新歌宮格 | index.html／order.html／admin.html | 語言分類前多一張跨分類標籤卡片，後台新增歌曲時勾選即可 |
+| 手機遙控（音量、切歌） | order.html「遙控」分頁 | 透過 Firestore 的 `remoteControl` 集合傳指令給電視牆執行；音量僅對 YouTube 有效 |
+| 已點歌曲可移除 | index.html／order.html 的「已點」分頁 | 點擊「移除」即可從佇列刪除，不影響歌曲庫本身 |
+| 歌曲排序 | index.html／order.html | 同分類下先按歌名字數少至多排序，字數相同再按第一個字筆劃數少至多排序（資料來源見 `stroke-data.js`） |
+| 語言分類 | index.html／order.html／admin.html | 本月新歌（全寬置頂）＋ 華語、方言、韓語、日語、西洋、其他（定義在 `ktv-utils.js` 的 `LANGUAGE_CATS`） |
+| 歌手名字區塊 | index.html／order.html | 語言 → 演唱類型 → **歌手名字** → 歌曲，歌手依筆劃少到多排序（英文名排最後、依字母排） |
+| 重複點播防止 | index.html／order.html／admin.html 插歌 | 同一首歌已在佇列時跳出提示並拒絕再加入（以交易寫入，兩支手機同時點同一首也只會成功一次） |
+| 歌曲長度（選填） | admin.html 新增歌曲表單 | Bilibili／Odysee 沒有「播放結束」事件，填了長度（例如 3:45）電視牆就會在「長度＋8 秒」後自動接下一首 |
+| 手機版面 | index.html | 螢幕寬度 820px 以下自動改成「影片在上、點歌面板在下」，影片原生的全螢幕鍵才看得到 |
+
+## 五、遠端遙控的權限取捨（請注意）
+
+「遙控」分頁（切歌、調音量）目前是**開放給所有掃碼進來的賓客**，這是你明確確認要的設定。這代表：
+
+- 任何拿到 `order.html` 網址或掃到 QR 碼的人，都可以切掉別人正在唱的歌、調整音量
+- Firestore 安全性規則也因此把 `queue` 集合的刪除權限、以及新的 `remoteControl` 集合完全開放給未登入的訪客（詳見 `firebase-config.js` 開頭的規則註解）
+- 如果之後發現被亂用（例如客人互相惡搞切歌），比較實際的做法是把「遙控」分頁改成只有你告訴特定客人／服務生的網址才看得到，或加一組簡單的識別碼機制——這部分目前沒有做，需要的話再跟我說
+
+## 六、已知技術限制（建置前務必知悉）
+
+這些是 YouTube／Bilibili／Odysee **官方嵌入播放器本身的限制**，不是本專案沒做，而是第三方平台的嵌入 API 就是只開放這些權限：
+
+- **速度與升降調**：依你的決定已從功能中移除，改用「原唱／伴唱雙版本網址切換」取代（你也已確認採用此方案）。
+- **播放結束自動接歌**：YouTube 有官方 IFrame API 可以精準偵測「播放完畢」並自動跳下一首（已實作）。Bilibili／Odysee **沒有**對外部網站開放這種事件通知，所以：
+  - 有人點播的 Bilibili／Odysee 歌曲播完後，需要你在 `admin.html` 手動按「切歌」（或未來歌曲庫都放 YouTube 版本就完全不用擔心）
+  - 電視牆閒置的「隨機播放」模式下，若剛好隨機到 Bilibili／Odysee 的歌，程式用 4.5 分鐘計時器強制換下一首，作為沒有結束事件通知時的備援方案
+- **Bilibili 地區限制**：Bilibili 官方對台灣／海外 IP 存取有時會有畫質限制或需要登入才能播放，這是該平台的政策，無法由本站繞過，建議歌曲庫優先收錄 YouTube／Odysee 版本，Bilibili 作為備用來源。
+- **【實測確認】Bilibili 嵌入常會跳轉出站**：實際部署後發現，多首 Bilibili 歌曲點擊後會直接跳轉到 bilibili.com，而不是留在站內播放。原因是 Bilibili 會檢查嵌入請求的來源網域，不在其白名單內的網站，播放器會顯示「請到 B 站觀看」的導引頁，點下去就整個跳出去——這是 Bilibili 平台端的策略，程式碼層級無法繞過。**實務上建議歌曲庫盡量優先收錄 YouTube 版本**，Bilibili 僅作為 YouTube 沒有的冷門歌曲備用來源，且要有心理準備該筆點播可能會直接跳轉出站。
+- **【實測確認】Bilibili／Odysee 會靜音自動播放，YouTube 不會**：這是瀏覽器（Chrome/Edge）的自動播放安全政策決定的，並非本站程式碼設定。瀏覽器會依「網域信任度」決定新影片能不能帶聲音自動播放，YouTube 幾乎在所有瀏覽器都已被判定為高信任網域，Bilibili／Odysee 則沒有，會被強制先靜音，需要使用者手動點擊播放器上的喇叭圖示才能有聲音。無法透過本站程式碼或 Bilibili／Odysee 提供的嵌入參數強制解除，這是瀏覽器刻意設計的限制。
+
+## 七、後續可以再擴充的方向（目前尚未實作）
+
+- 點歌時記錄桌號／暱稱，方便現場叫號
+- 後台批次匯入歌曲（CSV）
+- 已點播歷史記錄／熱門點播排行榜
+
+
+## 八、切歌／自動接歌／遙控「沒反應」的最常見原因
+
+這幾個功能都需要**未登入的訪客也能刪除 `queue`、寫入 `remoteControl`**。如果 Firestore 規則還是舊的（只有登入的後台能刪除），
+電視牆的切歌、播完自動接歌、手機「已點」的移除、手機「遙控」就會全部沒反應。新版程式遇到這種情況會直接跳出
+「權限不足（請到 Firebase 更新並發布 Firestore 規則）」的提示，請照 `firebase-config.js` 開頭註解裡的規則更新並按「發布」。
